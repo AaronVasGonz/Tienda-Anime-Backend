@@ -1,59 +1,54 @@
 const express = require('express');
-const conexion = require('../functions');
-const bcrypt = require("bcryptjs");
 require('dotenv').config();
-const { body, validationResult } = require('express-validator');
-const cors = require('cors')
 const mysql = require('mysql');
 const jwt = require('jsonwebtoken');
 const config = require('../config/config');
+const { getAdminRoleFromDb, getUserFromDb } = require('../functions/dbFunctions');
+const { verifyUser } = require('../functions/jwt');
+
+// Create database connection
 const connection = mysql.createConnection(config);
 
+// Authentication middleware
+const authMiddleware = async (req, res, next) => {
+  // Get authorization token from request header
+  const accessToken = req.headers['authorization'];
 
-const authMiddleware = (req, res, next) => {
-    const accessToken = req.headers['authorization'];
-    const user = req.headers['user'];
+  // If token is not provided, return authentication error
+  if (!accessToken) {
+    return res.status(401).json({ error: "Authorization token not provided" });
+  }
 
-    if (!accessToken) {
-        //console.log("Error");
-        return res.status(401).json({ error: "Token de autorización no proporcionado" });
+  try {
+    // Verify authorization token
+    const { correo, ...userObject } = await verifyUser(accessToken);
+
+    // If email is invalid, return invalid credentials error
+    if (!correo) {
+      return res.status(400).json({ error: "Invalid credentials" });
     }
 
-    jwt.verify(accessToken, process.env.SECRET, (err, decoded) => {
-        if (err) {
-            //console.log('Acceso denegado, token expirado o incorrecto');
-            return res.status(403).json({ error: "Token expirado o incorrecto" });
-        } else {
-            //console.log('Funka');
+    // Query the database to verify credentials
+    const results = await getUserFromDb(connection, correo);
 
-            if (user) {
-                const userObject = JSON.parse(user);
-                const correo = userObject.correo;
+    // If credentials are invalid, return invalid credentials error
+    if (results.length === 0) {
+      return res.status(400).json({ error: "Invalid credentials" });
+    }
 
-                if (correo) {
-                    connection.query("SELECT * FROM  USUARIO WHERE CORREO =  ?", [correo], async (err, results, fields) => {
-                        if (err) {
-                            //console.error('Error en la consulta a la base de datos:', err);
-                            return res.status(500).json({ error: "Error en la consulta a la base de datos" });
-                        }
+    // Add email to user object and store it in the request
+    Object.assign(userObject, { correo });
+    req.user = userObject;
 
-                        if (results.length === 0) {
-                            //console.log("Correo no encontrado en la base de datos");
-                            return res.status(400).json({ error: "Credenciales inválidas" });
-                        }
-                        req.user = results[0];
-                        //console.log("Existe correo en la base de datos");
-                        next();
-                    });
-                } else {
-                    //console.log("Error: No se proporcionó el correo en los headers");
-                }
-            } else {
-                //console.log("Error: No se proporcionó ningún usuario en los headers");
+    // Pass to the next middleware
+    next();
 
-            }
-        }
-    });
-}
+  } catch (error) {
+    // If there's an error verifying the token, return invalid token error
+    console.error(error);
+    return res.status(403).json({ error: "Invalid token" });
+  }
+};
 
-module.exports =  authMiddleware;
+module.exports = authMiddleware;
+

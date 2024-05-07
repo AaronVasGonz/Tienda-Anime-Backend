@@ -1,5 +1,5 @@
 const express = require('express');
-const conexion = require('../functions');
+
 const bcrypt = require("bcryptjs");
 require('dotenv').config();
 const { body, validationResult } = require('express-validator');
@@ -10,9 +10,6 @@ const config = require('../config/config');
 const routerAtuh = express.Router();
 const authMiddleware = require('../middlewares/authMiddleware');
 routerAtuh.use(express.json());
-
-
-
 
 routerAtuh.get('/auth', authMiddleware, (req, res) => {
 
